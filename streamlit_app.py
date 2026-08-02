@@ -7,7 +7,7 @@ import io
 st.title("BOLDER")
 st.subheader("[BEARD](https://physino.xyz/beard) Output Loader & Data ExploreR")
 
-uploaded_file = st.file_uploader("Upload your binary file")
+uploaded_file = st.file_uploader("Upload your binary file",max_upload_size=1)
 
 if uploaded_file is None:
     st.info("Please upload a binary file to begin.")
@@ -64,9 +64,42 @@ st.header("Energy Spectrum (Pulse Heights)")
 
 fig_hist, ax_hist = plt.subplots(figsize=(8, 4))
 ax_hist.hist(max_heights, bins=50, color='tab:blue', edgecolor='black')
-ax_hist.set_xlabel("Height (h)")
+ax_hist.set_xlabel("Height (ADC Counts)")
 ax_hist.set_ylabel("Entries")
 st.pyplot(fig_hist)
+
+st.header("Trigger Rate")
+
+# Convert timestamps from ms to seconds first for rate calculation, then to minutes for display
+ts_seconds = ts / 1000.0
+ts_minutes = ts_seconds / 60.0
+
+fig_rate, ax_rate = plt.subplots(figsize=(8, 4))
+
+# Compute histogram based on minutes for the x-axis bin edges
+counts, bin_edges_min, patches = ax_rate.hist(
+    ts_minutes, 
+    bins=50, 
+    color='tab:orange', 
+    edgecolor='black'
+)
+
+# Bin widths are currently in minutes, so convert them to seconds to maintain Hz (entries/second) on y-axis
+bin_widths_sec = np.diff(bin_edges_min) * 60.0
+
+ax_rate.clear()
+ax_rate.bar(
+    bin_edges_min[:-1], 
+    counts / bin_widths_sec, 
+    width=np.diff(bin_edges_min), 
+    align='edge', 
+    color='tab:orange', 
+    edgecolor='black'
+)
+
+ax_rate.set_xlabel("Time (minutes)")
+ax_rate.set_ylabel("Trigger Rate (Hz)")
+st.pyplot(fig_rate)
 
 st.header("Waveform Inspector")
 
@@ -91,7 +124,7 @@ fig_wave, ax_wave = plt.subplots(figsize=(8, 4))
 for i in range(start_event, end_event_inclusive + 1):
     ax_wave.plot(sample_times, samples[i], label=f"Event {i} (ms={ts[i]})")
 
-ax_wave.set_xlabel("Time ($\mu$s)")
+ax_wave.set_xlabel(r"Time ($\mu$s)")
 ax_wave.set_ylabel("ADC Counts (s)")
 ax_wave.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 st.pyplot(fig_wave)
