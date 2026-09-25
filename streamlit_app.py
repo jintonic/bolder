@@ -36,6 +36,7 @@ for i in range(num_files):
         timestamps = []
         waveforms = []
         max_heights = []
+        integrals = []
         
         while True:
             ts_data = f.read(8)
@@ -48,7 +49,18 @@ for i in range(num_files):
             wf = np.frombuffer(wf_data, dtype=np.uint8)
             timestamps.append(ms)
             waveforms.append(wf)
-            max_heights.append(np.max(wf))
+
+            raw_max = np.max(wf)
+            baseline = np.mean(wf[:6])
+            if raw_max >= 255:
+                pulse_height = 255.0
+            else:
+                pulse_height = raw_max - baseline
+            max_heights.append(pulse_height)
+
+            wf_subbed = wf.astype(np.float32) - baseline
+            pulse_integral = np.sum(wf_subbed) * SAMPLE_INTERVAL_US
+            integrals.append(pulse_integral)
             
         if not timestamps:
             st.error(f"Error: No valid events found in {ds_name}.")
@@ -57,6 +69,7 @@ for i in range(num_files):
         ts = np.array(timestamps, dtype=np.uint64)
         samples = np.array(waveforms, dtype=np.uint8)
         max_heights = np.array(max_heights, dtype=np.uint8)
+        integrals = np.array(integrals, dtype=np.float32)
         sample_times = np.arange(n, dtype=np.float32) * SAMPLE_INTERVAL_US
         
         total_time_sec = (ts[-1] - ts[0]) / 1000.0
@@ -67,6 +80,7 @@ for i in range(num_files):
             "ts": ts,
             "samples": samples,
             "max_heights": max_heights,
+            "integrals": integrals,
             "sample_times": sample_times,
             "total_time_sec": total_time_sec
         })
@@ -121,6 +135,45 @@ ax_hist.set_xlabel("Height (ADC counts)")
 ax_hist.set_ylabel("Rate (Hz/ADC count)")
 ax_hist.legend()
 st.pyplot(fig_hist)
+
+st.header("Energy Spectrum (Pulse Integrals)")
+
+fig_int, ax_int = plt.subplots(figsize=(8, 4))
+
+for idx, ds in enumerate(datasets):
+    counts_int, bin_edges_int = np.histogram(ds["integrals"], bins=64)
+    bin_widths_int = np.diff(bin_edges_int)
+    bin_centers_int = bin_edges_int[:-1] + bin_widths_int / 2.0
+    
+    rate_ints = counts_int / (ds["total_time_sec"] * bin_widths_int)
+    rate_int_errors = np.sqrt(counts_int) / (ds["total_time_sec"] * bin_widths_int)
+    
+    ax_int.hist(
+        bin_edges_int[:-1], 
+        bins=bin_edges_int, 
+        weights=rate_ints, 
+        histtype='step', 
+        color=colors[idx % len(colors)], 
+        linewidth=0.8,
+        linestyle='-'
+    )
+    
+    ax_int.errorbar(
+        bin_centers_int, 
+        rate_ints, 
+        yerr=rate_int_errors, 
+        fmt=markers[idx % len(markers)], 
+        color=colors[idx % len(colors)], 
+        ecolor=colors[idx % len(colors)], 
+        elinewidth=1, 
+        capsize=2,
+        label=ds['name']
+    )
+
+ax_int.set_xlabel(r"Integral of waveform (ADC counts $\times$ $\mu$s)")
+ax_int.set_ylabel(r"Rate (Hz / [ADC counts $\times$ $\mu$s])")
+ax_int.legend()
+st.pyplot(fig_int)
 
 for idx, ds in enumerate(datasets):
     st.header(f"Trigger Rate — {ds['name']}")
@@ -179,4 +232,5 @@ for idx, ds in enumerate(datasets):
     ax_wave.set_xlabel(r"Time ($\mu$s)")
     ax_wave.set_ylabel("ADC Counts")
     ax_wave.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax_wave.grid(True, linestyle='--', alpha=0.6)
     st.pyplot(fig_wave)
